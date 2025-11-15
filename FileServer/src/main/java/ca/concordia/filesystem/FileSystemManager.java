@@ -34,7 +34,8 @@ public class FileSystemManager {
     }
        return instance;
    }
-    private FileSystemManager(String filename, int totalSize) throws IOException {
+
+    public FileSystemManager(String filename, int totalSize) throws IOException {
         this.disk = new RandomAccessFile(filename, "rw");
         this.inodeTable = new FEntry[MAXFILES];
         this.dataBlocks = new FNode[MAXBLOCKS];
@@ -167,7 +168,7 @@ public class FileSystemManager {
 
     }
 
-    private void deleteFile(String fileName) throws Exception {
+    public void deleteFile(String fileName) throws Exception {
        globalLock.lock();
        try {
         int fileIndex = findFileIndex(fileName);
@@ -207,7 +208,7 @@ public class FileSystemManager {
 
     }
 
-    private void writeFile(String fileName, byte[] data) throws Exception {
+    public void writeFile(String fileName, byte[] data) throws Exception {
     
         if (data.length > BLOCK_SIZE * MAXBLOCKS) {
             throw new Exception("Data size exceeds maximum file size.");
@@ -248,7 +249,7 @@ public class FileSystemManager {
 
     }
 
-    private byte[] readFile(String fileName) throws Exception {
+    public byte[] readFile(String fileName) throws Exception {
         globalLock.lock();
         try {
             int fileIndex = findFileIndex(fileName);
