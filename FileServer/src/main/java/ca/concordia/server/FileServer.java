@@ -27,7 +27,7 @@ public class FileServer {
 
     public FileServer(int port, String fileSystemName, int totalSize) {
         // Initialize the FileSystemManager
-        FileSystemManager fsManager = FileSystemManager.getInstance(fileSystemName, totalSize);
+        this.fsManager = FileSystemManager.getInstance(fileSystemName, totalSize);
         this.port = port;
 
         // ThreadPool configuration
@@ -144,6 +144,11 @@ public class FileServer {
                     line=line.trim();
                     if(line.isEmpty()){
                         writer.println("ERROR: Empty command");
+                        continue;
+                    }
+
+                    if(FileServer.this.fsManager == null){
+                        writer.println("ERROR: Filesystem not initialized");
                         continue;
                     }
 

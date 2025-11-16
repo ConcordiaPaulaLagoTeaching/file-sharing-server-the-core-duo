@@ -237,6 +237,7 @@ public class FileSystemManager {
 
             // Write data to blocks
             writecontentsToBlocks(firstBlockIndex, data);
+            persistMetadata();
         } finally {
             globalLock.unlock();    
 
@@ -430,22 +431,9 @@ public class FileSystemManager {
     IOException rException = null;
      try {
          if (disk == null)return;
-         try {
              //Flush OS buffers
              persistMetadata();
-         } catch (IOException e) {
-            rException = e;
-         } 
-
-        try {
-            disk.close();
-        } catch (IOException e) {
-            if( rException == null) {
-                rException =e;
-            } else {
-                throw rException;
-            }
-        }
+             disk.close();
      } finally {
         globalLock.unlock();
      }
