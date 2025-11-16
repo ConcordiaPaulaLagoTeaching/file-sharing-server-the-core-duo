@@ -1,14 +1,14 @@
 package ca.concordia.filesystem;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+
 import ca.concordia.filesystem.datastructures.FEntry;
 import ca.concordia.filesystem.datastructures.FNode;
-
-import java.io.RandomAccessFile;
-import java.util.concurrent.locks.ReentrantLock;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
 public class FileSystemManager {
 
     private final int MAXFILES = 5;
@@ -63,8 +63,6 @@ public class FileSystemManager {
             // Load existing file system structures from disk
             loadFileSystem();
         }
-
-
 
     }
 
@@ -183,6 +181,7 @@ public class FileSystemManager {
     }
 
     public void deleteFile(String fileName) throws Exception {
+    public void deleteFile(String fileName) throws Exception {
        globalLock.lock();
        try {
         int fileIndex = findFileIndex(fileName);
@@ -226,6 +225,7 @@ public class FileSystemManager {
     }
 
     public void writeFile(String fileName, byte[] data) throws Exception {
+    public void writeFile(String fileName, byte[] data) throws Exception {
     
         if (data.length > BLOCK_SIZE * MAXBLOCKS) {
             throw new Exception("Data size exceeds maximum file size.");
@@ -261,6 +261,7 @@ public class FileSystemManager {
             System.out.println("DEBUG: Written file '" + fileName + "' with size: " + data.length);
             System.out.println("DEBUG: First block index: " + firstBlockIndex);
 
+            persistMetadata();
         } finally {
             globalLock.unlock();    
 
@@ -449,4 +450,41 @@ public class FileSystemManager {
         }
     }
     }
+
+    // Persist metadata and flush buffers
+    private void persistMetadata() throws IOException{
+        try {
+            globalLock.lock();
+            //write all FEntry records
+            for (int i =0; i< MAXFILES; i++){
+                writeFEntryToDisk(i);
+            }
+            //write all FNode records
+            for (int i=0; i< MAXBLOCKS; i++){
+                writeFNodeToDisk(i);
+            }
+            //Flush data
+            disk.getFD().sync();
+    
+        } finally {
+            globalLock.unlock();
+        }
+    }
+
+//Persist and close disk without erasing data       
+    public void close() throws IOException {
+    globalLock.lock();
+    IOException rException = null;
+     try {
+         if (disk == null)return;
+             //Flush OS buffers
+             persistMetadata();
+             disk.close();
+     } finally {
+        globalLock.unlock();
+     }
+    }
+
 }
+
+
