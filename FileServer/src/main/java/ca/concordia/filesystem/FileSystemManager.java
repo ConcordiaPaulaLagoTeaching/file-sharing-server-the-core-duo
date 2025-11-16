@@ -1,14 +1,14 @@
 package ca.concordia.filesystem;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+
 import ca.concordia.filesystem.datastructures.FEntry;
 import ca.concordia.filesystem.datastructures.FNode;
-
-import java.io.RandomAccessFile;
-import java.util.concurrent.locks.ReentrantLock;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
 public class FileSystemManager {
 
     private final int MAXFILES = 5;
@@ -52,8 +52,6 @@ public class FileSystemManager {
             // Load existing file system structures from disk
             loadFileSystem();
         }
-
-
 
     }
 
@@ -167,7 +165,7 @@ public class FileSystemManager {
 
     }
 
-    private void deleteFile(String fileName) throws Exception {
+    public void deleteFile(String fileName) throws Exception {
        globalLock.lock();
        try {
         int fileIndex = findFileIndex(fileName);
@@ -207,7 +205,7 @@ public class FileSystemManager {
 
     }
 
-    private void writeFile(String fileName, byte[] data) throws Exception {
+    public void writeFile(String fileName, byte[] data) throws Exception {
     
         if (data.length > BLOCK_SIZE * MAXBLOCKS) {
             throw new Exception("Data size exceeds maximum file size.");
@@ -248,7 +246,7 @@ public class FileSystemManager {
 
     }
 
-    private byte[] readFile(String fileName) throws Exception {
+    public byte[] readFile(String fileName) throws Exception {
         globalLock.lock();
         try {
             int fileIndex = findFileIndex(fileName);
