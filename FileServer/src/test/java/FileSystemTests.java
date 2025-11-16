@@ -1,14 +1,18 @@
-import ca.concordia.filesystem.FileSystemManager;
-import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import ca.concordia.filesystem.FileSystemManager;
 
 public class FileSystemTests {
     static FileSystemManager fs;
 
     @BeforeAll
     static void setup() throws Exception {
-        fs = new FileSystemManager("testfs.dat", 10 * 128);
+        fs =  FileSystemManager.getInstance("testfs.dat", 10 * 128);
     }
 
     @Test

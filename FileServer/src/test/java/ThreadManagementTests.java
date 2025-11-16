@@ -1,11 +1,20 @@
-package tests;
 
-import helpers.*;
-import org.junit.jupiter.api.*;
 
-import java.io.IOException;
-import java.util.concurrent.*;
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.jupiter.api.AfterAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import helpers.ClientRunner;
+import helpers.ServerRunner;
 
 public class ThreadManagementTests {
     static ServerRunner server;

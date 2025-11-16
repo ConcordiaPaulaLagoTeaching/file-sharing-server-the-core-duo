@@ -403,4 +403,54 @@ public class FileSystemManager {
         }
       
     }
+
+    // Persist metadata and flush buffers
+    private void persistMetadata() throws IOException{
+        try {
+            globalLock.lock();
+            //write all FEntry records
+            for (int i =0; i< MAXFILES; i++){
+                writeFEntryToDisk(i);
+            }
+            //write all FNode records
+            for (int i=0; i< MAXBLOCKS; i++){
+                writeFNodeToDisk(i);
+            }
+            //Flush data
+            disk.getFD().sync();
+    
+        } finally {
+            globalLock.unlock();
+        }
+    }
+
+//Persist and close disk without erasing data       
+    public void close() throws IOException {
+    globalLock.lock();
+    IOException rException = null;
+     try {
+         if (disk == null)return;
+         try {
+             //Flush OS buffers
+             persistMetadata();
+         } catch (IOException e) {
+            rException = e;
+         } 
+
+        try {
+            disk.close();
+        } catch (IOException e) {
+            if( rException == null) {
+                rException =e;
+            } else {
+                throw rException;
+            }
+        }
+     } finally {
+        globalLock.unlock();
+     }
+    }
+
 }
+
+

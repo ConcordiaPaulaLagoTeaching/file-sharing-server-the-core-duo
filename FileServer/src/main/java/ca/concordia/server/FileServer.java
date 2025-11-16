@@ -3,12 +3,16 @@ package ca.concordia.server;
 import ca.concordia.filesystem.FileSystemManager;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.imageio.IIOException;
+import javax.xml.namespace.QName;
 
 public class FileServer {
 
@@ -59,6 +63,15 @@ public class FileServer {
                 rejectedHandler
         );
         this.pool.allowCoreThreadTimeOut(true); // Allow core threads to time out
+
+        //Ensure filesystem is closed on shutdown
+        Runtime.getRuntime().addShutdownHook( new Thread(() -> {
+            try {
+                if (this.fsManager != null) {
+                    this.fsManager.close();
+                }
+            } catch (Exception ignored) {}
+        }));
     }
 
     public void start() {
@@ -66,7 +79,7 @@ public class FileServer {
             System.out.println("Server started. Listening on port 12345...");
 
             while (true) {
-                //accepts client request and
+                //accepts client request and hand it off to client handler
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Handling client: " + clientSocket);
                 this.pool.execute(new ClientTask(clientSocket));
@@ -75,9 +88,18 @@ public class FileServer {
             e.printStackTrace();
             System.err.println("Could not start server on port " + port);
         } finally {
-            this.pool.shutdown();
+            //ensure pool shutdown and filesystem closed
+            try {this.pool.shutdown();
+            } catch (Exception ignored) {}
+            try {    
+            if (this.fsManager != null) {
+                this.fsManager.close();
+            }
+        } catch (Exception e) {
+            System.err.println("Error closing FileSystemManager: " + e.getMessage());
         }
-    }
+     }
+ }
 
     // Handles each working threads
     private class ClientTask implements Runnable {
@@ -103,40 +125,118 @@ public class FileServer {
 
         @Override
         public void run() {
-            if (rejected) {
-                return; // Task was rejected, do not proceed
-
-                        }System.out.println("Handling client in: " + Thread.currentThread().getName() + " - " + clientSocket);
+            if (rejected) return ; // Task was rejected, do not proceed}
+            System.out.println(" Handling client in: " + Thread.currentThread().getName() + "-" + clientSocket);
 
             try (
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream())); PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream())); 
+                     PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true)
+                ) {  String line;
+                     while ((line = reader.readLine()) != null) {
                     System.out.println("Received from client: " + line);
+                    
+                    try {
+                    // Trim and validate command
+                    if (line == null ){
+                        writer.println("ERROR: empty command");
+                        continue;
+                    }
+                    line=line.trim();
+                    if(line.isEmpty()){
+                        writer.println("ERROR: Empty command");
+                        continue;
+                    }
+
                     String[] parts = line.split(" ");
                     String command = parts[0].toUpperCase();
 
                     switch (command) {
                         case "CREATE":
-                            fsManager.createFile(parts[1]);
-                            writer.println("SUCCESS: File '" + parts[1] + "' created.");
-                            writer.flush();
+                            if (parts.length < 2) {
+                                writer.println("ERROR: Filename required.");
+                                break;
+                            }
+                           try {
+                                fsManager.createFile(parts[1]);
+                                writer.println("SUCCESS: File '" + parts[1] + "' created.");
+                           } catch (Exception e) {
+                                writer.println("ERROR: " + e.getMessage());
+                           }
                             break;
-                        //TODO: Implement other commands READ, WRITE, DELETE, LIST
+
+                        case "READ":
+                            if (parts.length < 2) {
+                                writer.println("ERROR: Filename required.");
+                                break;
+                            }
+                            try {
+                                byte[] data = fsManager.readFile(parts[1]);
+                                if (data == null) {
+                                    writer.println("ERROR: File not found.");
+                                } else {
+                                    writer.println("SUCCESS: File '" + parts[1] + "' read. Data length: " + data.length);
+                                }
+                            } catch (Exception e) {
+                                writer.println("ERROR: " + e.getMessage());
+                            }
+                            break;
+
+                        case "WRITE":
+                            if (parts.length < 3) {
+                                writer.println("ERROR: Filename and data required.");
+                                break;
+                            }
+                            try {
+                                String fileName = parts[1];
+                                String dataStr = line.substring(line.indexOf(fileName) + fileName.length()).trim();
+                                byte[] data = dataStr.getBytes(); // Convert string to bytes
+                                fsManager.writeFile(fileName, data);
+                                writer.println("SUCCESS: File '" + fileName + "' written. Data length: " + data.length);
+                            } catch (Exception e) {
+                                writer.println("ERROR: " + e.getMessage());
+                            }
+                            break;
+
+                        case "DELETE":
+                            if (parts.length < 2) {
+                                writer.println("ERROR: Filename required.");
+                                break;
+                            }
+                            try {
+                                fsManager.deleteFile(parts[1]);
+                                writer.println("SUCCESS: File '" + parts[1] + "' deleted.");
+                            } catch (Exception e) {
+                                writer.println("ERROR: " + e.getMessage());
+                            }
+                            break;
+                        case "LIST":
+                            try {
+                                String[] files = fsManager.listFiles();
+                                writer.println("SUCCESS: Files found: " + String.join(", ", files));
+                            } catch (Exception e) {
+                                writer.println("ERROR: " + e.getMessage());
+                            }
+                            break;
                         case "QUIT":
                             writer.println("SUCCESS: Disconnecting.");
                             return;
                         default:
                             writer.println("ERROR: Unknown command.");
                             break;
+                  }
+                    } catch (Exception perLException) {
+                        writer.println("ERROR: Malformed input" + perLException.getMessage());
                     }
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+                
+            } catch (IOException e) {
+                System.err.println("I/O error handling client: " + clientSocket + " " + e.getMessage());
+            }  catch (RuntimeException e) {
+                System.err.println("Runtime error handling client: "+ clientSocket + e.getMessage());
             } finally {
                 try {
                     clientSocket.close();
-                } catch (Exception e) {
+                } catch (IOException ignored) {
                     // Ignore
                 }
             }
