@@ -8,6 +8,11 @@ public class FileSystemTests {
 
     @BeforeAll
     static void setup() throws Exception {
+         java.io.File testFile = new java.io.File("testfs.dat");
+        if (testFile.exists()) {
+        testFile.delete();
+        }
+        FileSystemManager.resetInstance();
         fs = new FileSystemManager("testfs.dat", 10 * 128);
     }
 
@@ -34,6 +39,8 @@ public class FileSystemTests {
     @Test
     void testWriteAndReadFile() throws Exception {
         fs.createFile("a.txt");
+        String[] files = fs.listFiles();
+        System.out.println("Files in system: " + java.util.Arrays.toString(files));
         fs.writeFile("a.txt", "hello".getBytes());
         assertEquals("hello", new String(fs.readFile("a.txt")));
     }
