@@ -1,0 +1,65 @@
+@startuml
+package "ca.concordia" {
+  class Main {
+    + main(String[] args)
+  }
+}
+
+package "ca.concordia.server" {
+  class FileServer {
+    - port : int
+    - fsManager : FileSystemManager
+    - pool : ExecutorService
+    + start()
+    + stop()
+  }
+  class "FileServer.ClientTask" <<inner>> {
+    - clientSocket : Socket
+    + run()
+  }
+}
+
+package "ca.concordia.filesystem" {
+  class FileSystemManager {
+    - rwLock : ReentrantReadWriteLock
+    - inodeTable : FEntry[]
+    - dataBlocks : FNode[]
+    - freeBlockList : boolean[]
+    - disk : RandomAccessFile
+    + getInstance(String, int) : FileSystemManager
+    + createFile(String)
+    + readFile(String) : byte[]
+    + writeFile(String, byte[])
+    + deleteFile(String)
+    + listFiles() : String[]
+    + persistMetadata()
+    + close()
+  }
+}
+
+package "ca.concordia.filesystem.datastructures" {
+  class FEntry {
+    - filename : String
+    - filesize : short
+    - firstBlock : short
+    + getters/setters
+  }
+  class FNode {
+    - blockIndex : short
+    - next : short
+    + getters/setters
+  }
+}
+
+FileServer --> FileSystemManager : uses
+"FileServer.ClientTask" --> FileServer : inner / accesses
+FileSystemManager "1" -- "*" FEntry : manages
+FileSystemManager "1" -- "*" FNode : manages
+
+note right of FileSystemManager
+  Synchronization policy:
+  - Single ReentrantReadWriteLock: readLock for read-only ops,
+    writeLock for mutating ops and persist.
+  - persistMetadata() requires caller to hold writeLock.
+end note
+@enduml

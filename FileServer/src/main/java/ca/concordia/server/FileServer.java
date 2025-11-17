@@ -130,6 +130,8 @@ public class FileServer {
             System.out.println(" Handling client in: " + Thread.currentThread().getName() + "-" + clientSocket);
 
             try (
+                    
+                    
                     BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream())); 
                      PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true)
                 ) {  String line;

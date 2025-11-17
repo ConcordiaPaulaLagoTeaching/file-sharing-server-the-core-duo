@@ -2,24 +2,32 @@ package ca.concordia.filesystem;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import ca.concordia.filesystem.datastructures.FEntry;
 import ca.concordia.filesystem.datastructures.FNode;
 public class FileSystemManager {
 
+
+
+    //Configuration
     private final int MAXFILES = 5;
     private final int MAXBLOCKS = 10;
     private  static FileSystemManager instance;
     private final RandomAccessFile disk;
-     private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock(true);
-    
+    private final String diskFileName;
+
+    // ReadWriteLock for I/O
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock(true);
+    private final ReentrantReadWriteLock.ReadLock readLock = rwLock.readLock();
+    private final ReentrantReadWriteLock.WriteLock writeLock = rwLock.writeLock();
+
+    private final ReentrantReadWriteLock fileOpLock = new ReentrantReadWriteLock(true);
+    private final ReentrantReadWriteLock.ReadLock fileOpReadLock = fileOpLock.readLock();
+    private final ReentrantReadWriteLock.WriteLock fileOpWriteLock = fileOpLock.writeLock();
 
     private static final int BLOCK_SIZE = 128; // Example block size
     private static final int FENTRY_SIZE = 15; // 11 (filename) + 2 (size) + 2 (firstBlock)
@@ -32,44 +40,53 @@ public class FileSystemManager {
     private final int metadataBlocks;
     private final int dataStartBlock;
     
+    //Singleton Factory
     public static synchronized FileSystemManager getInstance(String filename, int totalSize) {
+   try {
         if (instance == null) {
-          try{
+                instance = new FileSystemManager(filename, totalSize);      
+        } else if( !instance.diskFileName.equals(filename)){
+            // close previous instance and recreate for different disk file
+            try {instance.close(); } catch (IOException ignored) {}
             instance = new FileSystemManager(filename, totalSize);
-          } catch (IOException e) {
-            throw new RuntimeException("Failed to initialize FileSystemManager", e);
-        }
-     
-    }
-       return instance;
+             }
+            return instance;
+   } catch (IOException e) {
+        throw new RuntimeException("Failed to initialize FileSystemManager: " + e.getMessage());
    }
+    }
+    
+
     public static synchronized void resetInstance() {
        if (instance != null) {
             try {
                 instance.disk.close(); 
             } catch (IOException e) {
                 System.err.println("Error closing disk file: " + e.getMessage());
-            }
+            } 
             instance = null;
         }
     }
 
     public FileSystemManager(String filename, int totalSize) throws IOException {
+        this.diskFileName = filename;
         this.disk = new RandomAccessFile(filename, "rw");
         this.inodeTable = new FEntry[MAXFILES];
         this.dataBlocks = new FNode[MAXBLOCKS];
         this.freeBlockList = new boolean[MAXBLOCKS];   
-        
+
+        //computer metadata
         this.metadataBlocks = (int) Math.ceil((double)(MAXFILES * FENTRY_SIZE + MAXBLOCKS * FNODE_SIZE) / BLOCK_SIZE);
         this.dataStartBlock = metadataBlocks;
 
         initializeMemoryStructures();
+
         // Initialize all blocks as free
         for (int i = 0; i < MAXBLOCKS; i++) {
             freeBlockList[i] = true;
         }
 
-        // Format the file system
+        // Format/Load File system
         if (disk.length() == 0) {
             formatFileSystem();
         } else {    
@@ -89,8 +106,9 @@ public class FileSystemManager {
     }
 
     private void formatFileSystem() throws IOException {
-       disk.seek(0); // move to the start of the file
+        disk.seek(0); // move to the start of the file
         disk.setLength(0); // Clear existing content
+
        //FEntry initialization
        for (int i = 0; i < MAXFILES; i++) {
         disk.write(new byte[11]); // Assuming each FEntry takes 11 bytes
@@ -103,12 +121,15 @@ public class FileSystemManager {
         disk.writeShort(-1); // blockIndex
         disk.writeShort(-1); // next pointer
        }
+
+       // Ensure the rest of the metadata area is filled
         long current = disk.getFilePointer();
         long metadataEnd = (long) metadataBlocks * BLOCK_SIZE;
         if (current < metadataEnd) {
             disk.write(new byte[(int) (metadataEnd - current)]);
         }   
 
+        // Initialize data blocks to zero
          byte[] zeroBlock = new byte[BLOCK_SIZE];
         for (int i = 0; i < MAXBLOCKS; i++) {
             disk.write(zeroBlock);
@@ -118,6 +139,7 @@ public class FileSystemManager {
 
     private void loadFileSystem() throws IOException {
         disk.seek(0); // move to the start of the file
+
         // Load FEntry structures
         for (int i = 0; i < MAXFILES; i++) {
             byte[] nameBytes = new byte[11];
@@ -162,7 +184,7 @@ public class FileSystemManager {
         if (fileName.length() > 11) {
             throw new Exception("Filename cannot be longer than 11 characters.");
         }
-        readWriteLock.writeLock().lock();
+        writeLock.lock();
         try {
             // Check if file already exists
             for (int i = 0; i < MAXFILES; i++) {
@@ -179,7 +201,9 @@ public class FileSystemManager {
             int freeInodeIndex = -1;
             for (int i = 0; i < MAXFILES; i++) {
                 FEntry entry = inodeTable[i];
-                if (entry != null && (entry.getFilename()==null || entry.getFilename().trim().isEmpty()||entry.getFirstBlock()==-1)) {
+                //Remove firstBlock ==-1
+                if (entry != null && (entry.getFilename()==null || entry.getFilename().trim().isEmpty())) {
+            
                     freeInodeIndex = i;
                     System.out.println("Found free inode at index: " + i);
                     break;
@@ -200,7 +224,7 @@ public class FileSystemManager {
             System.out.println("Successfully created file: " + fileName + " at index: " + freeInodeIndex);
 
         } finally {
-        readWriteLock.writeLock().unlock();
+            writeLock.unlock();
         }
 
         
@@ -208,7 +232,9 @@ public class FileSystemManager {
     }
 
     public void deleteFile(String fileName) throws Exception {
-       readWriteLock.writeLock().lock();
+        System.out.println(Thread.currentThread().getName() + " trying to acquire writeLock in createFile for '" + fileName + "'"); 
+        writeLock.lock();
+        System.out.println(Thread.currentThread().getName() + " acquired writeLock in createFile for '" + fileName + "'"); 
        try {
         int fileIndex = findFileIndex(fileName);
         if (fileIndex == -1) {  
@@ -246,18 +272,25 @@ public class FileSystemManager {
          disk.getFD().sync();
 
        } finally {
-        readWriteLock.writeLock().unlock();
+             System.out.println(Thread.currentThread().getName() + " releasing writeLock in createFile for '" + fileName + "'"); 
+            writeLock.unlock();
+            System.out.println(Thread.currentThread().getName() + " writelock released in createFile for " + fileName );
        }
 
     }
 
     public void writeFile(String fileName, byte[] data) throws Exception {
-    
+
+        //Validate data 
+        if(data == null) {
+           data= new byte[0];
+        }
         if (data.length > BLOCK_SIZE * MAXBLOCKS) {
             throw new Exception("Data size exceeds maximum file size.");
-        }   
-        readWriteLock.writeLock().lock();
+        }
+        fileOpWriteLock.lock();
         try {
+            readLock.lock();
             int fileIndex = findFileIndex(fileName);
             System.out.println("Looking for file: " + fileName);
             if (fileIndex == -1) {
@@ -268,10 +301,14 @@ public class FileSystemManager {
                     System.out.println("  Index " + i + ": '" + entry.getFilename().trim() + "', firstBlock: " + entry.getFirstBlock());
                 }
             }
+                readLock.unlock();
                 throw new Exception("File not found.");
             }
-            FEntry entry = inodeTable[fileIndex];
+            readLock.unlock();
 
+            writeLock.lock();
+
+            FEntry entry = inodeTable[fileIndex];
             int requiredBlocks = (data.length + BLOCK_SIZE - 1) / BLOCK_SIZE;
             if (countfreeBlocks() < requiredBlocks) {
                 throw new Exception("Not enough free space.");
@@ -292,26 +329,23 @@ public class FileSystemManager {
 
             // Write data to blocks
             writecontentsToBlocks(firstBlockIndex, data);
-            disk.getFD().sync();
+            persistMetadata();
             } catch (Exception e) {
                 // Rollback on failure
                 entry.setFirstBlock(originalFirstBlock);
                 writeFEntryToDisk(fileIndex);
                 throw e;
-            }   
-
-            persistMetadata();
+            }  
+             writeLock.unlock();
         } finally {
-            readWriteLock.writeLock().unlock();    
-
-
+            fileOpWriteLock.unlock();
         }
 
 
     }
 
     public byte[] readFile(String fileName) throws Exception {
-        readWriteLock.readLock().lock();
+        fileOpReadLock.lock();
         try {
             int fileIndex = findFileIndex(fileName);
             if (fileIndex == -1) {
@@ -340,12 +374,14 @@ public class FileSystemManager {
             System.out.println("DEBUG: Read completed, total bytes: " + dataOffset);
             return data;
         } finally {
-           readWriteLock.readLock().unlock();
+           fileOpReadLock.unlock();
         }
     }
 
     public String[] listFiles() {
-        readWriteLock.readLock().lock();
+        System.out.println(Thread.currentThread().getName() + " trying to acquire readLock in listFiles");
+        readLock.lock();
+        System.out.println(Thread.currentThread().getName() + " acquired readLock in listFiles");
         try {
             List<String> fileList = new ArrayList<>();
             for (FEntry entry : inodeTable) {
@@ -355,7 +391,9 @@ public class FileSystemManager {
             }
             return fileList.toArray(new String[0]);
         } finally {
-            readWriteLock.readLock().unlock();
+            System.out.println(Thread.currentThread().getName() + " releasing readLock in listFiles");
+            readLock.unlock();
+            System.out.println(Thread.currentThread().getName() + " readLock released in listFiles");
         }
     }
 
@@ -381,6 +419,8 @@ public class FileSystemManager {
         }
         System.out.println("DEBUG: Write completed, total bytes written: " + dataOffset);
     }
+
+
     private int allocatedBlocks(byte[] data) throws IOException
     {
        int blocksneeded = (data.length + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -503,8 +543,10 @@ public class FileSystemManager {
 
     // Persist metadata and flush buffers
     private void persistMetadata() throws IOException{
-        try {
-            readWriteLock.writeLock().lock();
+      
+            // System.out.println("Trying to acquire lock in persistMetadata.");
+            // writeLock.lock();
+            // System.out.println("Acquired lock in persistMetadata.");
             //write all FEntry records
             for (int i =0; i< MAXFILES; i++){
                 writeFEntryToDisk(i);
@@ -516,23 +558,28 @@ public class FileSystemManager {
             //Flush data
             disk.getFD().sync();
     
-        } finally {
-            readWriteLock.writeLock().unlock();
-        }
+            // System.out.println("Releasing lock in persistMetadata.");
+            // writeLock.unlock();
+            // System.out.println("Released lock in persistMetadata.");
+       
     }
 
-//Persist and close disk without erasing data       
+    //Persist and close disk without erasing data       
     public void close() throws IOException {
-    readWriteLock.writeLock().lock();
-    IOException rException = null;
-     try {
-         if (disk == null)return;
-             //Flush OS buffers
-             persistMetadata();
-             disk.close();
-     } finally {
-        readWriteLock.writeLock().unlock();
-     }
+        System.out.println(Thread.currentThread().getName() + " trying to acquire writeLock in close");
+        writeLock.lock();
+        System.out.println(Thread.currentThread().getName() + " acquired writeLock in close");
+        IOException rException = null;
+        try {
+            if (disk == null)return;
+            //Flush OS buffers
+            persistMetadata();
+            disk.close();
+        } finally {
+            System.out.println(Thread.currentThread().getName() + " releasing writeLock in close");
+            writeLock.unlock();
+            System.out.println(Thread.currentThread().getName() + " released writeLock in close");
+        }
     }
 
 }
