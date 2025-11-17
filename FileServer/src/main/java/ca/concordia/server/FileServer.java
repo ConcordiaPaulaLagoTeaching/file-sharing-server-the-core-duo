@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -179,7 +180,9 @@ public class FileServer {
                                 if (data == null) {
                                     writer.println("ERROR: File not found.");
                                 } else {
-                                    writer.println("SUCCESS: File '" + parts[1] + "' read. Data length: " + data.length);
+                                    //Convert bytes to string using UTF-8
+                                    String content = new String(data, StandardCharsets.UTF_8);
+                                    writer.println("SUCCESS: " + content);
                                 }
                             } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
@@ -196,7 +199,7 @@ public class FileServer {
                                 String dataStr = line.substring(line.indexOf(fileName) + fileName.length()).trim();
                                 byte[] data = dataStr.getBytes(); // Convert string to bytes
                                 fsManager.writeFile(fileName, data);
-                                writer.println("SUCCESS: File '" + fileName + "' written. Data length: " + data.length);
+                                writer.println("SUCCESS: File '" + fileName + "' written with: " + new String(data, StandardCharsets.UTF_8));
                             } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
                             }
