@@ -93,7 +93,8 @@ public class FileSystemManager {
         disk.setLength(0); // Clear existing content
        //FEntry initialization
        for (int i = 0; i < MAXFILES; i++) {
-        disk.write(new byte[11]); // Assuming each FEntry takes 11 bytes
+        byte[] nameBytes = new byte[11];
+        disk.write(nameBytes); // Assuming each FEntry takes 11 bytes
         disk.writeShort(0); // filesize
         disk.writeShort(-1); // firstBlock pointer  
        }
@@ -106,7 +107,8 @@ public class FileSystemManager {
         long current = disk.getFilePointer();
         long metadataEnd = (long) metadataBlocks * BLOCK_SIZE;
         if (current < metadataEnd) {
-            disk.write(new byte[(int) (metadataEnd - current)]);
+            byte[] padding = new byte[(int) (metadataEnd - current)];
+            disk.write(padding);
         }   
 
          byte[] zeroBlock = new byte[BLOCK_SIZE];
@@ -160,8 +162,11 @@ public class FileSystemManager {
     public void createFile(String fileName) throws Exception {
         
         if (fileName.length() > 11) {
-            throw new Exception("Filename cannot be longer than 11 characters.");
+            throw new Exception("ERROR: Filename is too long.");
         }
+        if (fileName.contains(" ")) {
+        throw new Exception("filename cannot contain spaces");
+    }
         readWriteLock.writeLock().lock();
         try {
             // Check if file already exists
@@ -326,11 +331,12 @@ public class FileSystemManager {
 
             while (currentBlock != -1 && dataOffset < data.length && currentBlock<dataBlocks.length) {
                 FNode node = dataBlocks[currentBlock];
+                int dataBlockIndex = node.getBlockIndex();
                 if(node !=null && node.getBlockIndex()>=0 ) {
-                    long blockOffset = getDataBlockOffset(node.getBlockIndex());
+                    long blockOffset = getDataBlockOffset(dataBlockIndex);
                     disk.seek(blockOffset); 
                     int bytesToRead = Math.min(BLOCK_SIZE, data.length - dataOffset);
-                     System.out.println("DEBUG: Reading from block " + node.getBlockIndex() + ", offset " + dataOffset + ", bytes " + bytesToRead);
+                     System.out.println("DEBUG: Reading from block " + dataBlockIndex + ", offset " + dataOffset + ", bytes " + bytesToRead);
                     disk.readFully(data, dataOffset, bytesToRead);
                     dataOffset += bytesToRead;
                 }
@@ -384,46 +390,49 @@ public class FileSystemManager {
     private int allocatedBlocks(byte[] data) throws IOException
     {
        int blocksneeded = (data.length + BLOCK_SIZE - 1) / BLOCK_SIZE;
-            List<Integer> allocatedBlocks = new ArrayList<>();
+            
             List<Integer> blockNodes = new ArrayList<>();
             System.out.println("DEBUG: Need " + blocksneeded + " blocks for data size " + data.length);
 
             for (int i = 0; i <MAXBLOCKS && blockNodes.size() < blocksneeded; i++) {
-                if (dataBlocks[i].getBlockIndex()<0 && dataBlocks[i]!=null) {
+                if (freeBlockList[i]) {
+
                     blockNodes.add(i);
                 }
             }
+
+       
+            List<Integer> FNodes = new ArrayList<>();
                     //find free data block
-            for (int j = 0; j < freeBlockList.length && allocatedBlocks.size() < blocksneeded; j++) {
-                        if (freeBlockList[j]) {
-                            freeBlockList[j] = false; // Mark block as used
-                            allocatedBlocks.add(j);
+            for (int j = 0; j < MAXBLOCKS && FNodes.size() < blocksneeded; j++) {
+                        if (dataBlocks[j].getBlockIndex() == -1) {
+                            FNodes.add(j);
                             System.out.println("DEBUG: Allocated block " + j);
-                        
-                    
 
                 }
             }
-            if (blockNodes.size() < blocksneeded || allocatedBlocks.size() < blocksneeded) {
+        
+            if (blockNodes.size() < blocksneeded || FNodes.size() < blocksneeded) {
                 System.out.println("DEBUG: Failed to allocate enough blocks. Needed: " + blocksneeded + ", Got: " + blockNodes.size());
-                for (Integer block : allocatedBlocks) {
+                for (Integer block : FNodes) {
                     freeBlockList[block] = true; // Rollback
                 }   
                 return -1; // Not enough free blocks
             }   
 
             //Link FNodes
-            for (int idx = 0; idx < blockNodes.size(); idx++) {
-                int nodeIndex = blockNodes.get(idx);
+            for (int idx = 0; idx < blocksneeded; idx++) {
+                int nodeIndex = FNodes.get(idx);
+                int dataBlockIndex = blockNodes.get(idx);
                 FNode node = dataBlocks[nodeIndex];
-                node.setBlockIndex(allocatedBlocks.get(idx).shortValue());
-                short nextPointer = (idx < blockNodes.size() - 1) ? blockNodes.get(idx + 1).shortValue() : -1;
-                node.setNext(nextPointer);
+                node.setBlockIndex((short) dataBlockIndex);
+                short nextPointer = (idx < blocksneeded- 1) ? FNodes.get(idx + 1).shortValue() : -1;
+                node.setNext(nextPointer); 
+                freeBlockList[dataBlockIndex] = false;
                 writeFNodeToDisk(nodeIndex);
-                System.out.println("DEBUG: Linked FNode " + nodeIndex + " -> block " + allocatedBlocks.get(idx) + " -> next " + nextPointer);
+              
             }
-            System.out.println("DEBUG: First block index: " + blockNodes.get(0));
-            return blockNodes.get(0); // Return first block index
+            return FNodes.get(0); // Return first block index
     }
     private void writeFEntryToDisk(int index) throws IOException {
         long offset = (long) index * FENTRY_SIZE; // filename (11 bytes) + filesize (2 bytes) + firstBlock (2 bytes)
@@ -474,23 +483,24 @@ public class FileSystemManager {
     }
 
     private long getDataBlockOffset(int blockIndex) {
-        return (long) blockIndex * BLOCK_SIZE + (long) dataStartBlock * BLOCK_SIZE;
+        return (long) metadataBlocks * BLOCK_SIZE + (long) blockIndex * BLOCK_SIZE;
     }
     private void freefileBlocks(FEntry entry) throws IOException {
         int currentBlock = entry.getFirstBlock();
-        while (currentBlock != -1 && currentBlock<dataBlocks.length ) {
+        while (currentBlock != -1 && currentBlock<MAXBLOCKS ) {
             FNode node = dataBlocks[currentBlock];
             if (node != null) {  
-            if (node.getBlockIndex() >=0 && node.getBlockIndex()<freeBlockList.length) {
+            if (node.getBlockIndex() >=0 && node.getBlockIndex()<MAXBLOCKS) {
                 freeBlockList[node.getBlockIndex()] = true; // Mark block as free
-                     // long blockOffset = (long) node.getBlockIndex() * BLOCK_SIZE;
-                // disk.seek(blockOffset);
-                // disk.write(new byte[BLOCK_SIZE]); // Clear block data   
+
+                long blockOffset = getDataBlockOffset(node.getBlockIndex());
+                disk.seek(blockOffset);
+                disk.write(new byte[BLOCK_SIZE]); // Clear block data   
             }
            
             
-            node.setBlockIndex((short)-1); 
             int nextBlock = node.getNext(); 
+            node.setBlockIndex((short)-1); 
             node.setNext(-1);
             writeFNodeToDisk(currentBlock); 
             currentBlock = nextBlock;
