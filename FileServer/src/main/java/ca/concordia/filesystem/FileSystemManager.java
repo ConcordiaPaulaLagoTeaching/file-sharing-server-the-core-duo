@@ -168,7 +168,6 @@ public class FileSystemManager {
             for (int i = 0; i < MAXFILES; i++) {
             FEntry entry = inodeTable[i];
              if (entry != null && entry.getFilename() != null) {
-                System.out.println("Checking entry " + i + ": '" + entry.getFilename().trim() + "', firstBlock: " + entry.getFirstBlock());
                 if (fileName.equals(entry.getFilename().trim())) {
                     throw new Exception("File already exists.");
                 }
@@ -181,7 +180,6 @@ public class FileSystemManager {
                 FEntry entry = inodeTable[i];
                 if (entry != null && (entry.getFilename()==null || entry.getFilename().trim().isEmpty()||entry.getFirstBlock()==-1)) {
                     freeInodeIndex = i;
-                    System.out.println("Found free inode at index: " + i);
                     break;
                 }
             }
@@ -197,7 +195,6 @@ public class FileSystemManager {
 
             writeFEntryToDisk(freeInodeIndex);
             disk.getFD().sync();
-            System.out.println("Successfully created file: " + fileName + " at index: " + freeInodeIndex);
 
         } finally {
         readWriteLock.writeLock().unlock();
@@ -259,9 +256,7 @@ public class FileSystemManager {
         readWriteLock.writeLock().lock();
         try {
             int fileIndex = findFileIndex(fileName);
-            System.out.println("Looking for file: " + fileName);
             if (fileIndex == -1) {
-                 System.out.println("Current files in system:");
             for (int i = 0; i < MAXFILES; i++) {
                 FEntry entry = inodeTable[i];
                 if (entry != null && entry.getFilename() != null) {
@@ -319,8 +314,6 @@ public class FileSystemManager {
             }
             FEntry entry = inodeTable[fileIndex];
             byte[] data = new byte[entry.getFilesize()];
-            System.out.println("DEBUG: Reading file '" + fileName + "' with size: " + entry.getFilesize());
-            System.out.println("DEBUG: First block: " + entry.getFirstBlock());
             int currentBlock = entry.getFirstBlock();
             int dataOffset = 0;
 
@@ -330,14 +323,12 @@ public class FileSystemManager {
                     long blockOffset = getDataBlockOffset(node.getBlockIndex());
                     disk.seek(blockOffset); 
                     int bytesToRead = Math.min(BLOCK_SIZE, data.length - dataOffset);
-                     System.out.println("DEBUG: Reading from block " + node.getBlockIndex() + ", offset " + dataOffset + ", bytes " + bytesToRead);
                     disk.readFully(data, dataOffset, bytesToRead);
                     dataOffset += bytesToRead;
                 }
 
                 currentBlock = node !=null ? node.getNext(): -1;
             }
-            System.out.println("DEBUG: Read completed, total bytes: " + dataOffset);
             return data;
         } finally {
            readWriteLock.readLock().unlock();
@@ -375,18 +366,15 @@ public class FileSystemManager {
             dataOffset += bytesToWrite;
             
         }else {
-           System.out.println("DEBUG: Invalid node during write at currentBlock: " + currentBlock);
         }
         currentBlock = node != null ? node.getNext(): -1;
         }
-        System.out.println("DEBUG: Write completed, total bytes written: " + dataOffset);
     }
     private int allocatedBlocks(byte[] data) throws IOException
     {
        int blocksneeded = (data.length + BLOCK_SIZE - 1) / BLOCK_SIZE;
             List<Integer> allocatedBlocks = new ArrayList<>();
             List<Integer> blockNodes = new ArrayList<>();
-            System.out.println("DEBUG: Need " + blocksneeded + " blocks for data size " + data.length);
 
             for (int i = 0; i <MAXBLOCKS && blockNodes.size() < blocksneeded; i++) {
                 if (dataBlocks[i].getBlockIndex()<0 && dataBlocks[i]!=null) {
@@ -397,15 +385,11 @@ public class FileSystemManager {
             for (int j = 0; j < freeBlockList.length && allocatedBlocks.size() < blocksneeded; j++) {
                         if (freeBlockList[j]) {
                             freeBlockList[j] = false; // Mark block as used
-                            allocatedBlocks.add(j);
-                            System.out.println("DEBUG: Allocated block " + j);
-                        
-                    
+                            allocatedBlocks.add(j);                        
 
                 }
             }
             if (blockNodes.size() < blocksneeded || allocatedBlocks.size() < blocksneeded) {
-                System.out.println("DEBUG: Failed to allocate enough blocks. Needed: " + blocksneeded + ", Got: " + blockNodes.size());
                 for (Integer block : allocatedBlocks) {
                     freeBlockList[block] = true; // Rollback
                 }   
@@ -420,9 +404,7 @@ public class FileSystemManager {
                 short nextPointer = (idx < blockNodes.size() - 1) ? blockNodes.get(idx + 1).shortValue() : -1;
                 node.setNext(nextPointer);
                 writeFNodeToDisk(nodeIndex);
-                System.out.println("DEBUG: Linked FNode " + nodeIndex + " -> block " + allocatedBlocks.get(idx) + " -> next " + nextPointer);
             }
-            System.out.println("DEBUG: First block index: " + blockNodes.get(0));
             return blockNodes.get(0); // Return first block index
     }
     private void writeFEntryToDisk(int index) throws IOException {
@@ -447,12 +429,10 @@ public class FileSystemManager {
     }
 
     private int findFileIndex(String fileName) {
-         System.out.println("findFileIndex searching for: '" + fileName + "'");
         for (int i = 0; i < MAXFILES; i++) {
             FEntry entry = inodeTable[i];
             if (entry != null && entry.getFilename() != null) {
             String currentFilename = entry.getFilename().trim();
-            System.out.println("  Checking index " + i + ": '" + currentFilename + "', firstBlock: " + entry.getFirstBlock());
             
             if (fileName.equals(currentFilename)) {
                 return i;
