@@ -102,7 +102,7 @@ public class FileServer {
      }
  }
 
-    // Handles each working threads
+    // Receives and handles client requests
     private class ClientTask implements Runnable {
 
         private final Socket clientSocket;
