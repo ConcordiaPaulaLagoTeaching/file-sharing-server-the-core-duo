@@ -11,6 +11,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.imageio.IIOException;
 import javax.xml.namespace.QName;
@@ -19,6 +20,9 @@ public class FileServer {
 
     private FileSystemManager fsManager;
     private int port;
+
+    //Server-wide synchronization lock
+    private final ReentrantReadWriteLock serverLock = new ReentrantReadWriteLock();
 
     // Handles client connections (threads)
     private final ThreadPoolExecutor pool;
@@ -163,10 +167,13 @@ public class FileServer {
                                 break;
                             }
                            try {
+                                serverLock.writeLock().lock();
                                 fsManager.createFile(parts[1]);
                                 writer.println("SUCCESS: File '" + parts[1] + "' created.");
                            } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
+                           } finally {
+                               serverLock.writeLock().unlock();
                            }
                             break;
 
@@ -176,6 +183,7 @@ public class FileServer {
                                 break;
                             }
                             try {
+                                serverLock.readLock().lock();
                                 byte[] data = fsManager.readFile(parts[1]);
                                 if (data == null) {
                                     writer.println("ERROR: File not found.");
@@ -184,8 +192,11 @@ public class FileServer {
                                     String content = new String(data, StandardCharsets.UTF_8);
                                     writer.println("SUCCESS: " + content);
                                 }
-                            } catch (Exception e) {
+                            } 
+                            catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
+                            } finally {
+                                serverLock.readLock().unlock();
                             }
                             break;
 
@@ -195,6 +206,7 @@ public class FileServer {
                                 break;
                             }
                             try {
+                                serverLock.writeLock().lock();
                                 String fileName = parts[1];
                                 String dataStr = line.substring(line.indexOf(fileName) + fileName.length()).trim();
                                 byte[] data = dataStr.getBytes(); // Convert string to bytes
@@ -202,6 +214,8 @@ public class FileServer {
                                 writer.println("SUCCESS: File '" + fileName + "' written with: " + new String(data, StandardCharsets.UTF_8));
                             } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
+                            } finally {
+                                serverLock.writeLock().unlock();
                             }
                             break;
 
@@ -211,18 +225,24 @@ public class FileServer {
                                 break;
                             }
                             try {
+                                    serverLock.writeLock().lock();
                                 fsManager.deleteFile(parts[1]);
                                 writer.println("SUCCESS: File '" + parts[1] + "' deleted.");
                             } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
+                            } finally {
+                                serverLock.writeLock().unlock();
                             }
                             break;
                         case "LIST":
                             try {
+                                serverLock.readLock().lock();
                                 String[] files = fsManager.listFiles();
                                 writer.println("SUCCESS: Files found: " + String.join(", ", files));
                             } catch (Exception e) {
                                 writer.println("ERROR: " + e.getMessage());
+                            } finally {
+                                serverLock.readLock().unlock();
                             }
                             break;
                         case "QUIT":
