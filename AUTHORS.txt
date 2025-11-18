@@ -2,3 +2,5 @@ Programming Assignment 2
 
 Jing-Ning Chen – 40281215
 Jenny Tan - 40281924
+
+Use the commit 844a381467ea6e143f1ba484ce0f48d40b11eecf for the demo as the new main has some issues with the tests
